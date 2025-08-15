@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class SEP_Plugin {
 
     /** @var int[] Product IDs where sponsorship applies */
-    private $targets = [ 24818 ]; // ← Edit your product IDs here
+    private $targets = [ 4226 ]; // ← Edit your product IDs here
 
     /** @var SEP_Plugin */
     private static $instance = null;
@@ -179,6 +179,36 @@ public function render_front_form() {
         ( 'ad_home' === $it['key'] ? 'Homepage Banner Example' : 'Sidebar Banner Example' )
     );
 }
+			
+			// 2 B) : Quantity dropdown for backlink & guest-post (hidden by default)
+       // Add this immediately after printing the checkbox for each $it in render_front_form()
+if ( in_array( $it['key'], [ 'link_backlink', 'link_guest' ], true ) ) {
+
+    // choose placeholder text per option
+    $placeholder = ( 'link_guest' === $it['key'] )
+        ? 'Select number of Guest Posts'
+        : 'Select number of Backlinks';
+
+    // build the options: first a disabled placeholder, then 1..10
+    $opts = '<option value="" disabled selected>' . esc_html( $placeholder ) . '</option>';
+    foreach ( range(1, 10) as $i ) {
+        $opts .= sprintf( '<option value="%1$d">%1$d</option>', $i );
+    }
+
+    // output wrapper + select (hidden by default)
+    printf(
+        '<p class="sep-qty-wrapper" data-for="%1$s" style="display:none; margin-left:18px;">
+            <label style="display:inline-block; margin-right:8px;">%2$s</label>
+            <select name="sep_qty[%1$s]" class="sep-qty" data-key="%1$s">
+                %3$s
+            </select>
+         </p>',
+        esc_attr( $it['key'] ),
+        esc_html( $placeholder ),
+        $opts
+    );
+}
+
 
 
             // 3) If this is the 30‑Day Pinned Article option, append four hidden date‑range inputs
@@ -209,28 +239,26 @@ public function render_front_form() {
     echo '</div>';
 }
 
-
-	
-
     /** Add selected opts & price to cart */
-public function add_cart_item_data( $cart_item_data, $product_id ) {
+
+	public function add_cart_item_data( $cart_item_data, $product_id ) {
     // Only process our target products and when options are selected
     if ( ! $this->is_target_cart_item( $product_id ) || empty( $_POST['sep_opts'] ) ) {
         return $cart_item_data;
     }
 
     // 1) Existing checkbox logic: sanitize and sum flat prices,
-    //    skipping the two banners and the pinned‐article checkbox itself
+    //    skipping banner slots, pinned-article checkbox itself and qty-driven items
     $chosen = array_map( 'sanitize_text_field', (array) $_POST['sep_opts'] );
     $total  = 0;
     foreach ( $chosen as $key ) {
-        if ( in_array( $key, [ 'ad_home', 'ad_side', 'link_pinned' ], true ) ) {
+        if ( in_array( $key, [ 'ad_home', 'ad_side', 'link_pinned', 'link_backlink', 'link_guest' ], true ) ) {
             continue;
         }
         $total += $this->get_options_list()[ $key ]['price'] ?? 0;
     }
 
-    // Persist chosen options & initial total
+    // Persist chosen options & initial total (will be updated below)
     $cart_item_data['sep_opts']  = $chosen;
     $cart_item_data['sep_price'] = $total;
 
@@ -254,11 +282,21 @@ public function add_cart_item_data( $cart_item_data, $product_id ) {
         $r       = $cart_item_data['sep_ad_home_range'];
         $from_ts = strtotime( $r['from'] );
         $to_ts   = strtotime( $r['to'] );
-        $days    = ( ( $to_ts - $from_ts ) / DAY_IN_SECONDS ) + 1;
-        $base    = 300;
-        $per_day = 42.85;
-        $extra   = max( 0, $days - 7 ) * $per_day;
-        $total  += round( $base + $extra, 2 );
+        if ( $from_ts && $to_ts && $to_ts >= $from_ts ) {
+            $days    = intval( ( $to_ts - $from_ts ) / DAY_IN_SECONDS ) + 1;
+            $base    = 300;
+            $per_day = 42.85;
+            $extra   = max( 0, $days - 7 ) * $per_day;
+            $cost    = round( $base + $extra, 2 );
+            $total  += $cost;
+            // keep structured info for later (display/save)
+            $cart_item_data['sep_ad_home_range'] = [
+                'from' => date( 'Y-m-d', $from_ts ),
+                'to'   => date( 'Y-m-d', $to_ts ),
+                'days' => $days,
+                'cost' => $cost,
+            ];
+        }
     }
 
     // 4) Side Banner Ad prorated (7-day base, $21.42/day beyond)
@@ -266,30 +304,86 @@ public function add_cart_item_data( $cart_item_data, $product_id ) {
         $r2       = $cart_item_data['sep_ad_side_range'];
         $f2_ts    = strtotime( $r2['from'] );
         $t2_ts    = strtotime( $r2['to'] );
-        $d2       = ( ( $t2_ts - $f2_ts ) / DAY_IN_SECONDS ) + 1;
-        $base2    = 150;
-        $per_day2 = 21.42;
-        $extra2   = max( 0, $d2 - 7 ) * $per_day2;
-        $total  += round( $base2 + $extra2, 2 );
+        if ( $f2_ts && $t2_ts && $t2_ts >= $f2_ts ) {
+            $d2       = intval( ( $t2_ts - $f2_ts ) / DAY_IN_SECONDS ) + 1;
+            $base2    = 150;
+            $per_day2 = 21.42;
+            $extra2   = max( 0, $d2 - 7 ) * $per_day2;
+            $cost2    = round( $base2 + $extra2, 2 );
+            $total   += $cost2;
+            $cart_item_data['sep_ad_side_range'] = [
+                'from' => date( 'Y-m-d', $f2_ts ),
+                'to'   => date( 'Y-m-d', $t2_ts ),
+                'days' => $d2,
+                'cost' => $cost2,
+            ];
+        }
     }
 
-    // 5) 30‑Day Pinned Article prorated for slots 1–4
+    // 5) 30-Day Pinned Article prorated for slots 1–4
     foreach ( range( 1, 4 ) as $i ) {
         $key = "sep_link_pinned_{$i}_range";
         if ( ! empty( $cart_item_data[ $key ] ) ) {
             $r3     = $cart_item_data[ $key ];
             $f3     = strtotime( $r3['from'] );
             $t3     = strtotime( $r3['to'] );
-            $days30 = ( ( $t3 - $f3 ) / DAY_IN_SECONDS ) + 1;
-            $base30 = 500;
-            $per30  = 500 / 30;
-            $extra3 = max( 0, $days30 - 30 ) * $per30;
-            $total += round( $base30 + $extra3, 2 );
+            if ( $f3 && $t3 && $t3 >= $f3 ) {
+                $days30 = intval( ( $t3 - $f3 ) / DAY_IN_SECONDS ) + 1;
+                $base30 = 500;
+                $per30  = $base30 / 30.0;
+                $extra3 = max( 0, $days30 - 30 ) * $per30;
+                $cost30 = round( $base30 + $extra3, 2 );
+                $total += $cost30;
+                // store detailed info
+                $cart_item_data[ $key ] = [
+                    'from' => date( 'Y-m-d', $f3 ),
+                    'to'   => date( 'Y-m-d', $t3 ),
+                    'days' => $days30,
+                    'cost' => $cost30,
+                ];
+            }
         }
     }
 
-    // 6) Persist the updated total back into cart item
+    // 6) --- NEW: process qty-driven items (Backlink & Guest Post)
+    $posted_qtys = $_POST['sep_qty'] ?? [];
+    $qtys = [];
+    if ( is_array( $posted_qtys ) ) {
+        foreach ( $posted_qtys as $k => $v ) {
+            $k = sanitize_text_field( $k );
+            $q = intval( $v );
+            if ( $q < 1 ) $q = 1;
+            if ( $q > 10 ) $q = 10;
+            $qtys[ $k ] = $q;
+        }
+    }
+
+    $item_subtotals = [];
+
+    // Backlink: $100 each
+    if ( in_array( 'link_backlink', $chosen, true ) ) {
+        $q   = $qtys['link_backlink'] ?? 1;
+        $sub = round( 100.00 * $q, 2 );
+        $total += $sub;
+        $item_subtotals['link_backlink'] = $sub;
+    }
+
+    // Guest Post: $150 each
+    if ( in_array( 'link_guest', $chosen, true ) ) {
+        $q   = $qtys['link_guest'] ?? 1;
+        $sub = round( 150.00 * $q, 2 );
+        $total += $sub;
+        $item_subtotals['link_guest'] = $sub;
+    }
+
+    // 7) Persist the updated total, qtys and subtotals back into cart item
     $cart_item_data['sep_price'] = $total;
+    if ( ! empty( $qtys ) ) {
+        $cart_item_data['sep_qty'] = $qtys;
+    }
+    if ( ! empty( $item_subtotals ) ) {
+        $cart_item_data['sep_item_subtotals'] = $item_subtotals;
+    }
 
     return $cart_item_data;
 }
@@ -299,7 +393,7 @@ public function add_cart_item_data( $cart_item_data, $product_id ) {
 
     /** Restore cart data from session */
    
-	public function load_cart_item_data( $item, $values ) {
+   public function load_cart_item_data( $item, $values ) {
     // Existing: restore sep_opts & sep_price
     if ( isset( $values['sep_opts'] ) ) {
         $item['sep_opts'] = $values['sep_opts'];
@@ -308,7 +402,15 @@ public function add_cart_item_data( $cart_item_data, $product_id ) {
         $item['sep_price'] = $values['sep_price'];
     }
 
-    // NEW: restore banner and pinned‑article ranges
+    // NEW: restore qty-driven data (backlink / guest post) and their subtotals
+    if ( isset( $values['sep_qty'] ) ) {
+        $item['sep_qty'] = $values['sep_qty'];
+    }
+    if ( isset( $values['sep_item_subtotals'] ) ) {
+        $item['sep_item_subtotals'] = $values['sep_item_subtotals'];
+    }
+
+    // NEW: restore banner and pinned-article ranges
     foreach ( [
         'ad_home',
         'ad_side',
@@ -338,21 +440,20 @@ public function add_cart_item_data( $cart_item_data, $product_id ) {
     }
 
     /** Display meta in Cart & Checkout */
-/**
- * Display cart & checkout line‐item meta, including prorated reservation costs.
- *
- * @param array $meta Existing meta for this item.
- * @param array $item Cart item data.
- * @return array Modified meta.
- */
-public function display_cart_meta( $meta, $item ) {
-    // 1) Flat‐fee options (non‑date slots)
+
+	public function display_cart_meta( $meta, $item ) {
+    // 1) Flat‐fee options (non-date slots)
     if ( ! empty( $item['sep_opts'] ) ) {
         foreach ( $item['sep_opts'] as $key ) {
-            // Skip date‑driven slots here
+            // Skip date-driven slots here
             if ( in_array( $key, [ 'ad_home','ad_side','link_pinned' ], true ) ) {
                 continue;
             }
+            // ALSO skip qty-driven items (we'll show them later as qty+subtotal)
+            if ( in_array( $key, [ 'link_backlink', 'link_guest' ], true ) ) {
+                continue;
+            }
+
             $opt   = $this->get_options_list()[ $key ] ?? null;
             if ( ! $opt ) {
                 continue;
@@ -374,10 +475,10 @@ public function display_cart_meta( $meta, $item ) {
     $slots = [
         'ad_home'        => [ 'label'=>'Homepage Banner Ad',        'min'=>7,  'base'=>300 ],
         'ad_side'        => [ 'label'=>'Side Banner Ad',            'min'=>7,  'base'=>150 ],
-        'link_pinned_1'  => [ 'label'=>'30‑Day Pinned Slot 1',       'min'=>30, 'base'=>500 ],
-        'link_pinned_2'  => [ 'label'=>'30‑Day Pinned Slot 2',       'min'=>30, 'base'=>500 ],
-        'link_pinned_3'  => [ 'label'=>'30‑Day Pinned Slot 3',       'min'=>30, 'base'=>500 ],
-        'link_pinned_4'  => [ 'label'=>'30‑Day Pinned Slot 4',       'min'=>30, 'base'=>500 ],
+        'link_pinned_1'  => [ 'label'=>'30-Day Pinned Slot 1',       'min'=>30, 'base'=>500 ],
+        'link_pinned_2'  => [ 'label'=>'30-Day Pinned Slot 2',       'min'=>30, 'base'=>500 ],
+        'link_pinned_3'  => [ 'label'=>'30-Day Pinned Slot 3',       'min'=>30, 'base'=>500 ],
+        'link_pinned_4'  => [ 'label'=>'30-Day Pinned Slot 4',       'min'=>30, 'base'=>500 ],
     ];
 
     foreach ( $slots as $slot_key => $cfg ) {
@@ -418,27 +519,37 @@ public function display_cart_meta( $meta, $item ) {
         ];
     }
 
+    // 3) Qty-driven items (Backlink & Guest Post) — show qty + computed subtotal
+    if ( ! empty( $item['sep_item_subtotals'] ) && is_array( $item['sep_item_subtotals'] ) ) {
+        foreach ( $item['sep_item_subtotals'] as $k => $sub ) {
+            $label = $this->get_options_list()[ $k ]['label'] ?? ucfirst( str_replace( '_', ' ', $k ) );
+            $qty   = isset( $item['sep_qty'][ $k ] ) ? intval( $item['sep_qty'][ $k ] ) : 1;
+            $meta[] = [
+                'key'   => $label . ' (Qty: ' . $qty . ')',
+                'value' => '$' . number_format_i18n( floatval( $sub ), 2 ),
+            ];
+        }
+    }
+
     return $meta;
 }
 
 
 
+
     /** Save full meta to the order */
-  
-	/**
- * Save sponsorship options & reservation details into the order line item.
- */
-public function save_order_meta( $line_item, $cart_key, $values ) {
-    // 1) Flat‑fee options (unchanged)
+
+	public function save_order_meta( $line_item, $cart_key, $values ) {
+    // 1) Flat-fee options (unchanged) — save raw keys and flat items (skip date-driven and qty-driven items)
     if ( ! empty( $values['sep_opts'] ) ) {
         // Save the raw keys (hidden)
         $line_item->add_meta_data( '_sep_opts', $values['sep_opts'], true );
 
-        // Save each flat‑fee label + price
+        // Save each flat-fee label + price (skip ad slots, pinned placeholder and qty-driven items)
         foreach ( $values['sep_opts'] as $opt_key ) {
-			if ( in_array( $opt_key, [ 'ad_home', 'ad_side', 'link_pinned' ], true ) ) {
-            continue;
-        }
+            if ( in_array( $opt_key, [ 'ad_home', 'ad_side', 'link_pinned', 'link_backlink', 'link_guest' ], true ) ) {
+                continue;
+            }
             if ( $opt = $this->get_options_list()[ $opt_key ] ?? null ) {
                 $line_item->add_meta_data(
                     $opt['label'],
@@ -449,7 +560,7 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
         }
     }
 
-    // Helper to format YYYY‑MM‑DD → MM‑DD‑YYYY
+    // Helper to format YYYY-MM-DD → MM-DD-YYYY
     $format_date = function( $d ) {
         $dt = DateTime::createFromFormat( 'Y-m-d', $d );
         return $dt ? $dt->format('m-d-Y') : $d;
@@ -459,10 +570,10 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
     $slots = [
         'ad_home'        => [ 'Homepage Banner Ad',     7,  300 ],
         'ad_side'        => [ 'Side Banner Ad',         7,  150 ],
-        'link_pinned_1'  => [ '30‑Day Pinned Slot 1',  30, 500 ],
-        'link_pinned_2'  => [ '30‑Day Pinned Slot 2',  30, 500 ],
-        'link_pinned_3'  => [ '30‑Day Pinned Slot 3',  30, 500 ],
-        'link_pinned_4'  => [ '30‑Day Pinned Slot 4',  30, 500 ],
+        'link_pinned_1'  => [ '30-Day Pinned Slot 1',  30, 500 ],
+        'link_pinned_2'  => [ '30-Day Pinned Slot 2',  30, 500 ],
+        'link_pinned_3'  => [ '30-Day Pinned Slot 3',  30, 500 ],
+        'link_pinned_4'  => [ '30-Day Pinned Slot 4',  30, 500 ],
     ];
 
     foreach ( $slots as $slot_key => list( $label, $minDays, $base ) ) {
@@ -476,7 +587,10 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
         $to   = $values[ $meta_key ]['to'];
 
         // inclusive days
-        $days = floor( ( strtotime($to) - strtotime($from) ) / DAY_IN_SECONDS ) + 1;
+        $days = floor( ( strtotime( $to ) - strtotime( $from ) ) / DAY_IN_SECONDS ) + 1;
+        if ( $days < 1 ) {
+            $days = 1;
+        }
 
         // prorated cost
         $perDay = round( $base / $minDays, 2 );
@@ -503,9 +617,22 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
             true
         );
     }
+
+    // 3) Qty-driven items (Backlink & Guest Post) — persist qty + subtotal lines
+    if ( ! empty( $values['sep_item_subtotals'] ) && is_array( $values['sep_item_subtotals'] ) ) {
+        foreach ( $values['sep_item_subtotals'] as $k => $sub ) {
+            $label = $this->get_options_list()[ $k ]['label'] ?? ucfirst( str_replace( '_', ' ', $k ) );
+            $qty   = isset( $values['sep_qty'][ $k ] ) ? intval( $values['sep_qty'][ $k ] ) : 1;
+            $line_item->add_meta_data(
+                $label . ' (Qty: ' . $qty . ')',
+                '$' . number_format_i18n( floatval( $sub ), 2 ),
+                true
+            );
+        }
+    }
 }
 
-
+	
     /** Change Add to Cart text */
     public function button_text() {
         return $this->is_target_page() ? __( 'Buy Now', 'sponsor-episodes' ) : null;
@@ -529,7 +656,7 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
             return;
         }
         // 1) Render the Elementor Form (ID 4390)
-        echo do_shortcode( '[elementor-template id="24838"]' );
+        echo do_shortcode( '[elementor-template id="4390"]' );
 
         // 2) Pull raw _sep_opts
         $p = [];
@@ -565,7 +692,7 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
  */
 public function thankyou_message( $text, $order ) {
     // Merchant name (uppercased)
-    $merchant = 'Daily Security Review';
+    $merchant = 'TECH DAILY AI';
     // Order total formatted by WooCommerce
     $amount   = $order->get_formatted_order_total();
 
