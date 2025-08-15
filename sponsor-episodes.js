@@ -9,16 +9,7 @@
         $total   = $('#sep-total'),
         $tos     = $('#sep-tos');
 
-//     function recalc(){
-//       var sum = 0;
-//       $wrapper.find('input[name="sep_opts[]"]:checked').each(function(){
-//         sum += parseInt( $(this).data('price')||0, 10 );
-//       });
-//       $total.text('Total: $' + sum.toLocaleString());
-//       $('button.single_add_to_cart_button').prop('disabled', sum<1 || !$tos.is(':checked'));
-//     }
-
-	  /**
+ /**
  * Recalculate the cart total when options or date ranges change.
  * - Preserves existing flat‑fee options logic.
  * - Replaces flat fees for ad_home & ad_side with pro‑rated date‑range logic.
