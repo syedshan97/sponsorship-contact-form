@@ -3,7 +3,7 @@
  * Plugin Name:     Sponsor Episodes for WooCommerce
  * Description:     Dynamic per‑episode sponsorship: link/article, display ads, podcast & video options with real‑time pricing, TOS, Elementor post‑purchase form injection.
  * Version:         1.6
- * Author:          Syed Shan
+ * Author:          Stonefly
  * Text Domain:     sponsor-episodes
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class SEP_Plugin {
 
     /** @var int[] Product IDs where sponsorship applies */
-    private $targets = [ 4226 ]; // ← Edit your product IDs here
+    private $targets = [ 24818 ]; // ← Edit your product IDs here
 
     /** @var SEP_Plugin */
     private static $instance = null;
@@ -147,19 +147,39 @@ public function render_front_form() {
             );
 
             // 2) If this is one of the two banner slots, append a single hidden date‑range input
-            if ( in_array( $it['key'], [ 'ad_home', 'ad_side' ], true ) ) {
-                printf(
-                    '<p class="sep-ad-range-wrapper" style="display:none;">
-                       <input type="text"
-                              name="sep_ad_range[%1$s]"
-                              class="sep-ad-range"
-                              data-slot="%1$s"
-                              placeholder="Select reservation range…"
-                              readonly>
-                     </p>',
-                    esc_attr( $it['key'] )
-                );
-            }
+			if ( in_array( $it['key'], [ 'ad_home', 'ad_side' ], true ) ) {
+    // range picker + note + image
+    printf(
+        '<p class="sep-ad-range-wrapper" style="display:none;">
+           <input type="text"
+                  name="sep_ad_range[%1$s]"
+                  class="sep-ad-range"
+                  data-slot="%1$s"
+                  placeholder="Select reservation range…"
+                  readonly>
+           <br/><small class="sep-note"><em>%2$s</em></small>
+           <br/><img src="%3$s" alt="%4$s" class="sep-ad-preview" style="max-width:100%%;height:auto;margin-top:15px;">
+         </p>',
+        esc_attr( $it['key'] ),
+        // note text
+        ( 'ad_home' === $it['key']
+            ? 'Note: The homepage banner ad is available with flexible weekly scheduling. '
+              .'The minimum purchase is 1 week, billed at $300. You can extend beyond the '
+              .'initial week, with additional days billed at $300 ÷ 7 per day.'
+            : 'Note: The side banner ad is also available with flexible weekly scheduling. '
+              .'The minimum purchase is 1 week, billed at $150. Additional days beyond '
+              .'the first week are billed at $150 ÷ 7 per day.'
+        ),
+        // image src
+        ( 'ad_home' === $it['key']
+            ? '/wp-content/uploads/2025/08/Home-Banner-Ad.png'
+            : '/wp-content/uploads/2025/08/Side-Banner-Ad-O.png'
+        ),
+        // alt text
+        ( 'ad_home' === $it['key'] ? 'Homepage Banner Example' : 'Sidebar Banner Example' )
+    );
+}
+
 
             // 3) If this is the 30‑Day Pinned Article option, append four hidden date‑range inputs
             if ( 'link_pinned' === $it['key'] ) {
@@ -404,20 +424,6 @@ public function display_cart_meta( $meta, $item ) {
 
 
     /** Save full meta to the order */
-/**
- * Save sponsorship options + ad‑slot ranges to the order line item.
- *
- * @param WC_Order_Item_Product $line_item The order line item object.
- * @param string                $cart_key  The cart item key.
- * @param array                 $values    The cart item data (from add_cart_item_data).
- */
-
-	/**
- * Save cart item data (including all ranges) into the order line item.
- */
-   /**
- * Save sponsorship options & reservation details into the order line item.
- */
   
 	/**
  * Save sponsorship options & reservation details into the order line item.
@@ -523,7 +529,7 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
             return;
         }
         // 1) Render the Elementor Form (ID 4390)
-        echo do_shortcode( '[elementor-template id="4390"]' );
+        echo do_shortcode( '[elementor-template id="24838"]' );
 
         // 2) Pull raw _sep_opts
         $p = [];
@@ -559,7 +565,7 @@ public function save_order_meta( $line_item, $cart_key, $values ) {
  */
 public function thankyou_message( $text, $order ) {
     // Merchant name (uppercased)
-    $merchant = 'TECH DAILY AI';
+    $merchant = 'Daily Security Review';
     // Order total formatted by WooCommerce
     $amount   = $order->get_formatted_order_total();
 
